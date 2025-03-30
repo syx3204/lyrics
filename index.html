@@ -4,6 +4,16 @@
     <meta charset="UTF-8">
     <title>动态歌词显示</title>
     <style>
+        @font-face {
+            font-family: 'MyFont';
+            src: url('https://m.ccw.site/creator-college/videos/48cbf6a175c7b59e534049e599eb5598.ttf') format('truetype');
+        }
+        *, 
+        ::placeholder, /* 输入框提示文字 */
+        ::before, 
+        ::after {
+            font-family: 'MyFont', sans-serif !important;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: #111;
@@ -50,7 +60,6 @@
     </div>
 
 <script>
-// DOM元素缓存
 const dom = {
     ul: document.querySelector('ul'),
     container: document.querySelector('.container')
@@ -58,16 +67,15 @@ const dom = {
 
 // 播放状态和当前时间
 let currentTime = 0;
-let play = true;
+let play = true; // 默认播放状态
 
-// URL参数解析增强版
+// URL参数解析增强版（新增play参数解析）
 const parseURLParams = () => {
     const params = new URLSearchParams(location.search);
     let lrc = '';
     
     try {
         const rawLrc = params.get('lrc') || '';
-        // 处理JSON数组格式参数
         if (rawLrc.startsWith('%5B') || rawLrc.startsWith('[')) {
             lrc = JSON.parse(decodeURIComponent(rawLrc)).join('\n');
         } else {
@@ -77,11 +85,20 @@ const parseURLParams = () => {
         console.error('歌词参数解析失败:', e);
     }
 
+    // 新增播放状态解析
+    const playParam = params.get('play');
+    let playState = true; // 默认值
+    if (playParam !== null) {
+        playState = playParam.toLowerCase() === 'true';
+    }
+
     return {
         lrc: lrc,
-        time: parseFloat(params.get('time')) || 0
+        time: parseFloat(params.get('time')) || 0,
+        play: playState
     };
 };
+
 
 // 增强版歌词解析器
 const parseLRC = (rawText) => {
@@ -184,23 +201,22 @@ const updateLyricPosition = () => {
 };
 
 // 初始化流程
-const { lrc, time } = parseURLParams();
-currentTime = time;
+const urlParams = parseURLParams();
+currentTime = urlParams.time;
+play = urlParams.play; // 应用URL参数中的播放状态
 
-// 解析歌词数据
-const musicData = parseLRC(lrc);
-//console.log('解析后的歌词数据:', musicData); // 调试输出
+const musicData = parseLRC(urlParams.lrc);
 
-if (musicData.length > 16) { // 16 = 8顶部留白 + 8底部留白
+if (musicData.length > 16) {
     renderLyrics(musicData);
     updateLyricPosition();
 } else {
     dom.ul.innerHTML = '<li style="color:#fff; font-size:1.2em">⚠️ 歌词加载失败，请检查网络。若是开发者，请检查传参。</li>';
 }
 
-// 模拟播放进度
+// 模拟播放进度（已支持通过play变量控制）
 setInterval(() => {
-    if (play) {
+    if (play) { // 根据播放状态更新进度
         currentTime += 0.5;
         updateLyricPosition();
     }
