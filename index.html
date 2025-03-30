@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>动态歌词显示</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #111;
+            color: #666;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            height: 60vh;
+            width: 80%;
+            overflow: hidden;
+            position: relative;
+        }
+        ul {
+            list-style: none;
+            transition: 0.6s;
+            position: absolute;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        li {
+            line-height: 4vh;
+            font-size: 2vh;
+            transition: 0.3s;
+            text-align: center;
+            padding: 5px 0;
+            opacity: 0.6;
+        }
+        li.active {
+            color: #fff;
+            transform: scale(1.15);
+            opacity: 1;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <ul></ul>
+    </div>
+
+<script>
+// DOM元素缓存
+const dom = {
+    ul: document.querySelector('ul'),
+    container: document.querySelector('.container')
+};
+
+// 播放状态和当前时间
+let currentTime = 0;
+let play = true;
+
+// URL参数解析增强版
+const parseURLParams = () => {
+    const params = new URLSearchParams(location.search);
+    let lrc = '';
+    
+    try {
+        const rawLrc = params.get('lrc') || '';
+        // 处理JSON数组格式参数
+        if (rawLrc.startsWith('%5B') || rawLrc.startsWith('[')) {
+            lrc = JSON.parse(decodeURIComponent(rawLrc)).join('\n');
+        } else {
+            lrc = decodeURIComponent(rawLrc).replace(/\+/g, ' ');
+        }
+    } catch (e) {
+        console.error('歌词参数解析失败:', e);
+    }
+
+    return {
+        lrc: lrc,
+        time: parseFloat(params.get('time')) || 0
+    };
+};
+
+// 增强版歌词解析器
+const parseLRC = (rawText) => {
+    const result = [];
+    const emptyLine = { time: -1, text: '‎' }; // 零宽空格占位
+    
+    // 添加顶部留白
+    for(let i = 0; i < 8; i++) result.push(emptyLine);
+
+    // 预处理歌词文本
+    const lines = rawText
+        .trim()
+        .split(/\r?\n/)
+        .map(line => line.trim().replace(/^"(.*)"$/, '$1')) // 去除引号
+        .filter(line => line);
+
+    // 解析每行歌词
+    lines.forEach(line => {
+        try {
+            // 匹配时间标签（支持 [mm:ss.xx] 和 [m:ss] 格式）
+            const timeMatch = line.match(/^\[(\d{1,}):(\d{2})(?:\.(\d{1,3}))?]/);
+            if (!timeMatch) return;
+
+            const minutes = parseInt(timeMatch[1], 10) || 0;
+            const seconds = parseInt(timeMatch[2], 10) || 0;
+            const milliseconds = parseInt(timeMatch[3] || '0', 10) / 100 || 0;
+            const time = minutes * 60 + seconds + milliseconds;
+
+            // 提取歌词文本
+            const text = line.slice(timeMatch[0].length).trim();
+
+            result.push({
+                time: Number(time.toFixed(2)),
+                text: text || '‎' // 保证text属性存在
+            });
+        } catch (e) {
+            console.warn('解析歌词行失败:', line, e);
+        }
+    });
+
+    // 按时间排序并合并重复时间点
+    const merged = [];
+    result
+        .sort((a, b) => a.time - b.time)
+        .forEach(item => {
+            const last = merged[merged.length - 1];
+            if (last && last.time === item.time) {
+                last.text += '<br>' + item.text;
+            } else {
+                merged.push({...item});
+            }
+        });
+
+    // 添加底部留白
+    for(let i = 0; i < 8; i++) merged.push(emptyLine);
+
+    return merged;
+};
+
+// 创建歌词DOM
+const renderLyrics = (data) => {
+    dom.ul.innerHTML = data.map(item => {
+        // 空行处理
+        if (item.time === -1) {
+            return '<li style="height:4vh; opacity:0"></li>';
+        }
+        
+        // 安全处理文本内容
+        const content = (item.text || '‎')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/<br>/g, '<br/>');
+
+        return `<li data-time="${item.time}">${content}</li>`;
+    }).join('');
+};
+
+// 更新歌词高亮和位置
+const updateLyricPosition = () => {
+    if (!dom.ul.children.length) return;
+
+    // 找到当前时间对应的歌词行
+    const currentIndex = musicData.findIndex(
+        item => item.time > currentTime
+    ) - 1;
+
+    // 移除旧的高亮
+    const activeLi = dom.ul.querySelector('.active');
+    if (activeLi) activeLi.classList.remove('active');
+
+    // 设置新高亮
+    const currentLi = dom.ul.children[currentIndex];
+    if (currentLi) {
+        currentLi.classList.add('active');
+        // 计算滚动位置
+        const containerHeight = dom.container.offsetHeight;
+        const scrollPosition = currentLi.offsetTop - containerHeight / 2;
+        dom.ul.style.transform = `translateY(-${scrollPosition}px)`;
+    }
+};
+
+// 初始化流程
+const { lrc, time } = parseURLParams();
+currentTime = time;
+
+// 解析歌词数据
+const musicData = parseLRC(lrc);
+//console.log('解析后的歌词数据:', musicData); // 调试输出
+
+if (musicData.length > 16) { // 16 = 8顶部留白 + 8底部留白
+    renderLyrics(musicData);
+    updateLyricPosition();
+} else {
+    dom.ul.innerHTML = '<li style="color:#fff; font-size:1.2em">⚠️ 歌词加载失败，请检查网络。若是开发者，请检查传参。</li>';
+}
+
+// 模拟播放进度
+setInterval(() => {
+    if (play) {
+        currentTime += 0.5;
+        updateLyricPosition();
+    }
+}, 500);
+</script>
+</body>
+</html>
